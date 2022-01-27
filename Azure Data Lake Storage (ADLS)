@@ -1,0 +1,85 @@
+Mount datalake on databricks without secret scope (without secret scope is not recommended and hence not a best practice).
+Azure Databricks is just an environment for data intensive computations. However, there are several intricacies and usecases involved in Databricks for now you can consider it
+as a data intensive compute environment which provides a highly scalable compute instance.
+
+Mounting is nothing but a process to establish connection between the Azure managed database or filesystem (datastore) so that compute can retrieve(lift) and save(shift) data in the Azure
+managed datastores.
+It involves following steps:
+STEP-1: CREATE STORAGE ACCOUNT
+STEP-2: CREATE AZURE SERVICE PRINCIPAL
+STEP-3: GIVE ACCESS OF STORAGE ACCOUNT TO SERVICE PRINCIPAL
+STEP-4: MOUNT ADLS GEN2 ON DATABRICKS
+
+STEP-1: CREATE STORAGE ACCOUNT
+1.) Create "storage account" using Azure Portal. During account creation 
+enable "Data Lake Storage Gen2 > Hierarchical namespace" under "Advanced" tab. And then just create the storage account.
+2.) Download the "Storage Explorer". Login user azure account credentials. Now go to your subscription and select the 
+storage account that you just created.
+3.) Now create container under any container(Blob container, File Stores, Queues, Tables) that you would like. These created
+containers can be "Raw" (to store raw data), "Processed" (to store processed data), etc.
+
+STEP-2: CREATE AZURE SERVICE PRINCIPAL
+1.) Click/search "Azure Active Directory". Now click on "App registration" and then click on "New registration".
+2.) Once registration is done. Copy "Application (client) ID", "Directory (tenant) ID".
+3.) Click on "Certificates & secrets". Under "Client secrets" click on "New client secret". Now copy the "Value" created and keep it as it
+will not be available.
+
+STEP-3: GIVE ACCESS OF STORAGE ACCOUNT TO SERVICE PRINCIPAL
+1.) Click on storage account that was created in step-1. Click on "Access Control (IAM). Click on "Add" and select "New role assignment".
+Now select "Role" generally "Storage Blob Data Contributor". Now select the name of service principal created in step-2.
+
+STEP-4: MOUNT ADLS GEN2 ON DATABRICKS
+1.) Go to Databricks workspace and create new notebook.
+
+## *****************CODE**************************
+storage_account_name = "NAME OF STORAGE ACCOUNT (STEP-1)"
+client_id = "APPLICATION (client) ID (STEP-2)"
+tenant_id = "DIRECTORY (tenant) ID (STEP-2)"
+client_secret = "VALUE (STEP-2)"
+
+configs = {
+  "fs.azure.account.auth.type": "OAuth",
+   "fs.azure.account.oauth.provider.type": "org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider",
+   "fs.azure.account.oauth2.client.id": f"{client_id }",
+   "fs.azure.account.oauth2.client.secret": f"{client_secret}",
+   "fs.azure.account.oauth2.client.endpoint": f"https://login.microsoftonline.com/{tenant_id}/oauth2/token"}
+
+# mount raw and processed containers
+def mount_adls(container_name):
+dbutils.fs.mount(
+source = "abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/",
+mount_point = f"/mnt/{storage_account_name}/{container_name}",
+extra_configs = configs)
+
+mount_adls(container_name="raw")
+mount_adls(container_name="processed")
+
+#To read from Azure Data lake Gen2
+df=spark.read.option("header","true").csv("/mnt/{storage_account_name}/raw/Employee.txt").head(5)
+display(df)
+
+
+********************Mounting with Best Practices**************************
+Azure Key vault:
+Create Azure Key Vault and add secrets to this vault. Now link the databricks secret scope with that of azure secret scope.
+Once it is done. Now access the secrets in the notebook using "dbutils.secrets.get"
+
+STEP-1: CREATE AZURE KEY VAULT
+1.) Search "key vault" and create it. Here you can also specify the access to different users".
+2.) Once key vault is created, click on "Secrets" under "Settings". Now click on "Generate/Import".
+3.) Create secrets corresponding to "client ID", "tenant ID" and client_secret" by passing their respective values one at a time. Now you will end up
+with secret scope.
+4.) Go to "Properties" and select "Vault URI" (DNS Name), "Resource ID"
+
+STEP-2: CREATE SECRET SCOPE IN DATABRICKS TO CONNECT KEY VAULT WITH DATABRICKS
+1.) Go to databricks "Home" by clicking on logo
+2.) Add "#secrets/createScope" in the home url to go to databricks secrets UI
+3.) Enter "DNS Name" and "Resource ID"
+
+# ***************CODE******************
+storage_account_name = "NAME OF STORAGE ACCOUNT (STEP-1)"
+client_id = dbutils.secrets.get(scope="DATABRICLS SCOPE NAME", key="CLIENT ID SECRET CREATED IN STEP-1")
+tenant_id = dbutils.secrets.get(scope="DATABRICLS SCOPE NAME", key="TENANT ID SECRET CREATED IN STEP-1")
+client_secret = dbutils.secrets.get(scope="DATABRICLS SCOPE NAME", key="CLIENT_SECRET SECRET CREATED IN STEP-1")
+
+# rest code will remain same as above
