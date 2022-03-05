@@ -1,4 +1,6 @@
 # Databricks Configuration with Data Sources in Azure Managed Environment
+Best practices with enterprise grade security for working with Databricks
+
 ## Important things to remember
 * **Key Vaut:** It's just a safe case managed by Azure and here we keep all our secret credentials in order to avoid unauthorized access.
 * **Mount:** It's a technical terminology used to connect your computation environment with that of datastore.
